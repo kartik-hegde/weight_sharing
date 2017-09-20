@@ -6,7 +6,6 @@ from scipy.cluster.vq import vq, kmeans
 
 def kmeans_data(x,centroids):
 	kmeans_x = kmeans(x, centroids)
-	vq_x	 = vq(kmeans_x[0])
-
+	vq_x	 = vq(x,kmeans_x[0])
 	return kmeans_x[0],vq_x[0]
 

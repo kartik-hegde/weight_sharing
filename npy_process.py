@@ -127,18 +127,14 @@ def convert_kmeans_fc(x):
 	temp_list=[]
 	#Read the values into a list
 	for i in range(p):
-		for j in range(q):
-			temp_list.append(x0[i][j])
+		temp_list = x0[i]
 
-	temp_list_centroids, templist_index = kmeans_data(temp_list, p*q/4 )
-	#Replace the values in temp list
-	for i,item in enumerate(temp_list):
-		temp_list[i] = temp_list_centroids[templist_index[i]]
-	#Write Back to the original ndarray
-	for i in range(p):
-		for j in range(q):
-			x0[i][j] = temp_list[i*q+j]
-
+		temp_list_centroids, templist_index = kmeans_data(temp_list, q/4 )
+		#Replace the values in temp list
+		for j,item in enumerate(temp_list):
+			temp_list[j] = temp_list_centroids[templist_index[j]]
+		#Write Back to the original ndarray
+		x0[i] = temp_list
 	return_list.append(x0)
 
 	#Do nothing for biases
