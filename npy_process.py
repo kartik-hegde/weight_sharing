@@ -173,7 +173,7 @@ def convert_normal_conv(x, N):
 				for k in range(r):
 					temp_list.append(x0[i][j][k][l])
 
-		temp_list_normal = normaL_data(temp_list, N)
+		temp_list_normal = normal_data(temp_list, N)
 		#Write Back to the original ndarray
 		for i in range(p):
 			for j in range(q):
