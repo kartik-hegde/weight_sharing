@@ -8,8 +8,9 @@ import operator
 # NUM_VAL = 4    # number of possible weight value
 # NUM_PE = 2     # number of PEs
 R = 3
-C = 512
-NUM_VAL = 256    # number of possible weight value
+S = 3
+C = 256
+NUM_VAL = 71    # number of possible weight value
 NUM_PE = 16     # number of PEs
 ADD_COST = 1
 MULT_COST = 20
@@ -26,30 +27,17 @@ class PE:
     def __init__(self, iidx, ikey="WVALUE"):
         self.idx = iidx                     # index of this PE
         self.key = ikey                     # Whether PEs are organized by wvalue or wplane
-        self.wvalue_wplane_pairs = []       # list of pairs: (wvalue, wplane)
-        self.wvalue_to_wplanes = {}         # dictionary: wvalue -> wplanes that have this wvalue
-        self.wplane_to_wvalues = {}         # dictionary: wplane -> wvalues that this wplane has
+        self.wvalue_wplane_count = []       # list of pairs: (wvalue, wplane, count)
+        self.wvalue_to_wplanes = {}         # dictionary: wvalue -> wplanes that have this wvalue (repeat if one wvalue appears several times on one plane)
+        self.wplane_to_wvalues = {}         # dictionary: wplane -> wvalues that this wplane has (repeat if one wvalue appears several times on one plane 
         self.wvalue_set = set([])           # all wvalues covered
         self.wplane_set = set([])           # all wplanes covered
         self.total_wvalue_occurence = 0     # sum(weight * sum(wplanes * weight_occurence))
         self.workload = 0                   # total computational workload (#ADD * COST_OF_ADD + #MUL * COST_OF_MUL)
         self.workingset_size = 0            # total workingset (#input channels(== #wplanes) needed to fetch into L1)
 
-    ## Member function for adding a pair (wvalue, wplane) to current PE
-    def add_wvalue_wplane_pair(self, wvalue_wplane_pair):
-        if self.key != "PAIR":
-            print("ERROR: PE # ", self.idx, " can only be added works by giving (wvalue, wplane) pairs")
-            assert 0
-        else:
-            self.wvalue_wplane_pairs.append(wvalue_wplane_pair)
-            self.wvalue_set = self.wvalue_set.union([wvalue_wplane_pair[0]])
-            self.wplane_set = self.wplane_set.union([wvalue_wplane_pair[1]])
-            self.total_wvalue_occurence = self.total_wvalue_occurence + 1
-            self.workload = self.total_wvalue_occurence * ADD_COST + len(self.wvalue_set) * MULT_COST
-            self.workingset_size = len(self.wplane_set)
-
     ## Member function for adding a wvalue with associated wplanes to current PE
-    def add_wvalue(self, wvalue, wplanes, one_filter):
+    def add_wvalue(self, wvalue, wplanes):
         if self.key != "WVALUE":
             print("ERROR: PE # ", self.idx, " can only be added works by giving wvalues")
             assert 0
@@ -60,16 +48,12 @@ class PE:
             self.wvalue_to_wplanes[wvalue] = wplanes
             self.wvalue_set = self.wvalue_set.union([wvalue])
             self.wplane_set = self.wplane_set.union(wplanes)
-            for wplane_idx in wplanes:
-                for i in range(R):
-                    for j in range(R):
-                        if one_filter[wplane_idx][i][j] == wvalue:
-                            self.total_wvalue_occurence = self.total_wvalue_occurence + 1
+            self.total_wvalue_occurence = self.total_wvalue_occurence + len(wplanes)
             self.workload = self.total_wvalue_occurence * ADD_COST + len(self.wvalue_set) * MULT_COST
             self.workingset_size = len(self.wplane_set)
 
     ## Member function for adding a wplane with associated wvalues to current PE
-    def add_wplane(self, wplane, wvalues, one_filter):
+    def add_wplane(self, wplane, wvalues):
         if self.key != "WPLANE":
             print("ERROR: PE # ", self.idx, " can only be added works by giving wplanes")
             assert 0
@@ -81,6 +65,19 @@ class PE:
             self.wplane_set = self.wplane_set.union([wplane])
             self.wvalue_set = self.wvalue_set.union(wvalues)
             self.total_wvalue_occurence = self.total_wvalue_occurence + R*R;
+            self.workload = self.total_wvalue_occurence * ADD_COST + len(self.wvalue_set) * MULT_COST
+            self.workingset_size = len(self.wplane_set)
+
+    ## Member function for adding a pair (wvalue, wplane) to current PE
+    def add_wvalue_wplane_count(self, wvalue_wplane_count):
+        if self.key != "PAIR":
+            print("ERROR: PE # ", self.idx, " can only be added works by giving (wvalue, wplane) pairs")
+            assert 0
+        else:
+            self.wvalue_wplane_count.append(wvalue_wplane_count)
+            self.wvalue_set = self.wvalue_set.union([wvalue_wplane_count[0]])
+            self.wplane_set = self.wplane_set.union([wvalue_wplane_count[1]])
+            self.total_wvalue_occurence = self.total_wvalue_occurence + wvalue_wplane_count[2]
             self.workload = self.total_wvalue_occurence * ADD_COST + len(self.wvalue_set) * MULT_COST
             self.workingset_size = len(self.wplane_set)
 
@@ -99,20 +96,14 @@ class PE:
         else:
             return False
 
-    def find_wvalue_wplane_pair(self, wvalue_wplane_pair):
+    def find_wvalue_wplane_count(self, wvalue_wplane_count):
         if self.key != "PAIR":
             print("ERROR: PE # ", self.idx, " cannot be searched by pairs")
             assert 0
-        elif wvalue_wplane_pair in self.wvalue_wplane_pairs:
+        elif wvalue_wplane_count in self.wvalue_wplane_count:
             return True
         else:
             return False
-
-    # def get_wvalues(self):
-        # return list(self.wvalue_set)
-
-    # def get_wplanes(self):  # Alias: get_workingset_size
-        # return list(self.wplane_set)
 
     def get_total_wvalue_occurence(self):
         return self.total_wvalue_occurence
@@ -150,33 +141,43 @@ def genOneFilter():
    return one_filter
 
 ## Generate size=NUM_VAL list of lists, each list contains indices of weight planes sharing this weight value
-def genWValue2WPlanesList(one_filter):
-    wvalue2wplanes_list = []
-    for i in range(NUM_VAL):
-        wvalue2wplanes_list.append([])
-        for c in range(C):
-            if i in one_filter[c]:
-                wvalue2wplanes_list[i].append(c)
-    return wvalue2wplanes_list
+def getWValue2WPlanesDict(one_filter):
+    wvalue2wplanes_dict = {}
+    for c in range(C):
+        for r in range(R):
+            for s in range(R):
+                if one_filter[c][r][s] in wvalue2wplanes_dict:
+                    wvalue2wplanes_dict[one_filter[c][r][s]].append(c)  # allow repetition of channel idx in every wplane list
+                else:
+                    wvalue2wplanes_dict[one_filter[c][r][s]] = []
+
+    return wvalue2wplanes_dict
 
 ## Generate size=C list of lists, each list contains wvalues that locate in this wplane
-def genWPlane2WValuesList(one_filter):
-    wplane2wvalues_list = []
+def getWPlane2WValuesDict(one_filter):
+    wplane2wvalues_dict = {}
     for c in range(C):
-        wplane2wvalues_list.append([])
-        for i in range(NUM_VAL):
-            if i in one_filter[c]:
-                wplane2wvalues_list[c].append(i)
-    return wplane2wvalues_list
+        wplane2wvalues_dict[c] = []
+        for r in range(R):
+            for s in range(R):
+                wplane2wvalues_dict[c].append(one_filter[c][r][s])  # Allow repetition of wvalue in every wvalue list
+    
+    return wplane2wvalues_dict
 
 ## Generate (wvalue, wplane) pair for all wvalues / wplanes, allow repetition for identical (wvalue, wplane) due to existence of one value repeats in one plane
-def genWValueWPlanePairs(one_filter):
-    wvalue_wplane_pairs = []
+def getWValueWPlaneTuples(one_filter):
+    wvalue_wplane_count = []
     for c in range(C):
-        for i in range(R):
-            for j in range(R):
-                wvalue_wplane_pairs.append((one_filter[c][i][j], c))
-    return wvalue_wplane_pairs
+        wvalues = set([])
+        for r in range(R):
+            wvalues = wvalues.union(one_filter[c][r])
+
+        for v in wvalues:
+            count = np.count_nonzero(one_filter[c] == v)
+            wvalue_wplane_count.append((v, c, count))
+    return wvalue_wplane_count
+
+
 
 # ## Get the union set of wplanes that a list of weights point to
 # def getWplanesForWvalues(wvalues, wvalue2wplanes_list):
@@ -200,13 +201,13 @@ def genWValueWPlanePairs(one_filter):
 ##              for every wvalue, scan from high workload PE to low workload PE;
 ##              find the PE with workload < MAX_WORKLOAD and with maximum wplane overlap
 ##              If no overlap OR same amount of overlap across multiple PE, choose PE with lower workload
-def Schedule_MinWorkload_Greedy(one_filter, wvalue2wplanes_list):
+def Schedule_MinWorkload_Greedy(wvalue2wplanes_dict):
     print("\n\n")
     print("=========================================")
     print("====== Schedule_MinWorkload_Greedy ======")
     print("=========================================\n")
     # Get a list of all possible weight values
-    wvalue_pool = np.arange(NUM_VAL)
+    wvalue_pool = np.array(list(wvalue2wplanes_dict.keys()))
     np.random.shuffle(wvalue_pool)
 
     # Initialize: randomly pick NUM_PE wvalues into each PE
@@ -215,7 +216,7 @@ def Schedule_MinWorkload_Greedy(one_filter, wvalue2wplanes_list):
     for i in range(NUM_PE):
         pes.append(PE(i, "WVALUE"))
         print("Add weight value ", wvalue_pool[0], " to PE #", i)
-        pes[i].add_wvalue(wvalue_pool[0],wvalue2wplanes_list[wvalue_pool[0]], one_filter)
+        pes[i].add_wvalue(wvalue_pool[0], wvalue2wplanes_dict[wvalue_pool[0]])
         wvalue_pool = np.delete(wvalue_pool, [0])
     print("\n######## Initial State ########")
     for pe in pes:
@@ -224,7 +225,7 @@ def Schedule_MinWorkload_Greedy(one_filter, wvalue2wplanes_list):
     # For every weight value, find the best fit bin:
     print("\n#### Start Adding Unique Weight Values ####")
     for wvalue in wvalue_pool:
-        wplanes = wvalue2wplanes_list[wvalue]
+        wplanes = wvalue2wplanes_dict[wvalue]
         # sort the PEs in terms of workload
         pes.sort(key=operator.attrgetter('workload'), reverse=True)
         max_wplane_overlap = 0
@@ -234,7 +235,7 @@ def Schedule_MinWorkload_Greedy(one_filter, wvalue2wplanes_list):
                 pe_target = pe
                 max_wplane_overlap = pe.get_num_wplanes_overlap(wplanes)
 
-        pe_target.add_wvalue(wvalue, wplanes, one_filter)
+        pe_target.add_wvalue(wvalue, wplanes)
         print("@@@ Add weight value ", wvalue, wplanes, len(wplanes), " to PE #", pe_target.get_idx())
         print("@@@ Workload of PE #", pe_target.get_idx(), " becomes ", pe_target.get_workload())
         print("@@@ The number of wplane overlap is ", max_wplane_overlap)
@@ -255,7 +256,7 @@ def Schedule_MinWorkload_Greedy(one_filter, wvalue2wplanes_list):
 ##              We make sure that the number of wplanes in each PE cannot exceed C/NUM_PE
 ##              Every time we add one wplane into one PE, the number of extra wvalues added to the PE is minimized
 ##              If there are multiple candidate PE or no candidate PE, add it to the PE with smallest number of wplanes
-def Schedule_MinWorkingset_Greedy(one_filter, wplane2wvalues_list):
+def Schedule_MinWorkingset_Greedy(wplane2wvalues_dict):
     print("\n\n")
     print("===========================================")
     print("====== Schedule_MinWorkingset_Greedy ======")
@@ -270,7 +271,7 @@ def Schedule_MinWorkingset_Greedy(one_filter, wplane2wvalues_list):
     for i in range(NUM_PE):
         pes.append(PE(i, "WPLANE"))
         print("Add weight plane ", wplane_pool[0], " to PE #", i)
-        pes[i].add_wplane(wplane_pool[0], wplane2wvalues_list[wplane_pool[0]], one_filter)
+        pes[i].add_wplane(wplane_pool[0], wplane2wvalues_dict[wplane_pool[0]])
         wplane_pool = np.delete(wplane_pool, [0])
     print("\n######## Initial State ########")
     for pe in pes:
@@ -279,17 +280,17 @@ def Schedule_MinWorkingset_Greedy(one_filter, wplane2wvalues_list):
     # For every weight plane, find the best fit bin:
     print("\n#### Start Adding Unique Weight Planes ####")
     for wplane in wplane_pool:
-        wvalues = wplane2wvalues_list[wplane]
+        wvalues = wplane2wvalues_dict[wplane]
         # sort the PEs in terms of amount of wplanes
         pes.sort(key=operator.attrgetter('workingset_size'), reverse=True)
         min_wplane_append = C
         pe_target = pes[-1]
         for pe in pes:
-            if pe.get_workingset_size() <= MAX_WORKINGSET_SIZE and (len(wvalues) - pe.get_num_wvalues_overlap(wvalues)) <= min_wplane_append:
+            if pe.get_workingset_size() <= MAX_WORKINGSET_SIZE and (len(set(wvalues)) - pe.get_num_wvalues_overlap(wvalues)) <= min_wplane_append:
                 pe_target = pe
-                min_wplane_append = len(wvalues) - pe.get_num_wvalues_overlap(wvalues)
+                min_wplane_append = len(set(wvalues)) - pe.get_num_wvalues_overlap(wvalues)
 
-        pe_target.add_wplane(wplane, wvalues, one_filter)
+        pe_target.add_wplane(wplane, wvalues)
         print("@@@ Add weight plane ", wplane, wvalues, len(wvalues), " to PE #", pe_target.get_idx())
         print("@@@ Workingset size of PE #", pe_target.get_idx(), " becomes ", pe_target.get_workingset_size())
         print("@@@ The number of wvalue increase is ", min_wplane_append)
@@ -314,17 +315,17 @@ def Schedule_MinWorkingset_Greedy(one_filter, wplane2wvalues_list):
 ##              Case IV:    Find no wvalue/wplane in any PE: choose one with fewest wplanes
 ##              Reason:     same as II
 ## Note:        Case II and Case III can be switched
-def Schedule_Hybrid_Greedy(one_filter, wvalue_wplane_pairs):
+def Schedule_Hybrid_Greedy(wvalue_wplane_count):
     print("\n\n")
     print("====================================")
     print("====== Schedule_Hybrid_Greedy ======")
     print("====================================\n")
     # Get a list of all (wvalue, wplane) pair
-    if len(wvalue_wplane_pairs) != R*R*C:
-        print("ERROR: number of (wvalue, wplane) pairs must be R*R*C")
-        assert 0
+    # if len(wvalue_wplane_count) != R*R*C:
+        # print("ERROR: number of (wvalue, wplane) pairs must be R*R*C")
+        # assert 0
 
-    wvalue_wplane_pool = wvalue_wplane_pairs
+    wvalue_wplane_pool = wvalue_wplane_count
     rand.shuffle(wvalue_wplane_pool)
 
     ## Since we take care of the no repeat case, no need to do initialization
@@ -337,18 +338,19 @@ def Schedule_Hybrid_Greedy(one_filter, wvalue_wplane_pairs):
 
     # For every (wvalue, wplane) pair, find the best bin:
     print("\n#### Start Adding Unique (wvalue, wplane) pair to PEs ####")
-    for pair in wvalue_wplane_pool:
-        wvalue = pair[0]
-        wplane = pair[1]
+    for tup in wvalue_wplane_count:
+        wvalue = tup[0]
+        wplane = tup[1]
+        count = tup[2]
         # Pass 1 for Case I:
         pe_candidates = []
         for pe in pes:
-            if pe.find_wvalue_wplane_pair(pair):
+            if pe.find_wvalue_wplane_count(tup):
                 pe_candidates.append(pe)
         if len(pe_candidates):
             pe_candidates.sort(key=operator.attrgetter('workload'))
-            pe_candidates[0].add_wvalue_wplane_pair(pair)
-            print("@@@ (DOUBLE_MATCH)", len(pe_candidates), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates[0].get_idx())
+            pe_candidates[0].add_wvalue_wplane_count(count)
+            print("@@@ (DOUBLE_MATCH)", len(pe_candidates), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ", count =", count, ") to PE #", pe_candidates[0].get_idx())
             continue
 
         # Pass 2.5
@@ -364,45 +366,45 @@ def Schedule_Hybrid_Greedy(one_filter, wvalue_wplane_pairs):
         if round(rand.random()):
             if len(pe_candidates_for_wplane):
                 if len(pe_candidates_for_wplane) == 1:
-                    pe_candidates_for_wplane[0].add_wvalue_wplane_pair(pair)
+                    pe_candidates_for_wplane[0].add_wvalue_wplane_count(tup)
                     print("@@@ (WPLANE_MATCH_ONLY_1)", len(pe_candidates_for_wplane), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates_for_wplane[0].get_idx())
                     continue
             if len(pe_candidates_for_wvalue):
                 if len(pe_candidates_for_wvalue) == 1:
-                    pe_candidates_for_wvalue[0].add_wvalue_wplane_pair(pair)
+                    pe_candidates_for_wvalue[0].add_wvalue_wplane_count(tup)
                     print("@@@ (WVALUE_MATCH_ONLY_1)", len(pe_candidates_for_wvalue), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates_for_wvalue[0].get_idx())
                     continue
         else:
             if len(pe_candidates_for_wvalue):
                 if len(pe_candidates_for_wvalue) == 1:
-                    pe_candidates_for_wvalue[0].add_wvalue_wplane_pair(pair)
+                    pe_candidates_for_wvalue[0].add_wvalue_wplane_count(tup)
                     print("@@@ (WVALUE_MATCH_ONLY_1)", len(pe_candidates_for_wvalue), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates_for_wvalue[0].get_idx())
                     continue
             if len(pe_candidates_for_wplane):
                 if len(pe_candidates_for_wplane) == 1:
-                    pe_candidates_for_wplane[0].add_wvalue_wplane_pair(pair)
+                    pe_candidates_for_wplane[0].add_wvalue_wplane_count(tup)
                     print("@@@ (WPLANE_MATCH_ONLY_1)", len(pe_candidates_for_wplane), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates_for_wplane[0].get_idx())
                     continue
         if round(rand.random()):
             if len(pe_candidates_for_wplane):
                 pe_candidates_for_wplane.sort(key=operator.attrgetter('workload'))
-                pe_candidates_for_wplane[0].add_wvalue_wplane_pair(pair)
+                pe_candidates_for_wplane[0].add_wvalue_wplane_count(tup)
                 print("@@@ (WPLANE_MATCH_WITH_MANY)", len(pe_candidates_for_wplane), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates_for_wplane[0].get_idx())
                 continue
             if len(pe_candidates_for_wvalue):
                 pe_candidates_for_wvalue.sort(key=operator.attrgetter('workingset_size'))
-                pe_candidates_for_wvalue[0].add_wvalue_wplane_pair(pair)
+                pe_candidates_for_wvalue[0].add_wvalue_wplane_count(tup)
                 print("@@@ (WVALUE_MATCH_WITH_MANY)", len(pe_candidates_for_wvalue), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates_for_wvalue[0].get_idx())
                 continue
         else:
             if len(pe_candidates_for_wvalue):
                 pe_candidates_for_wvalue.sort(key=operator.attrgetter('workingset_size'))
-                pe_candidates_for_wvalue[0].add_wvalue_wplane_pair(pair)
+                pe_candidates_for_wvalue[0].add_wvalue_wplane_count(tup)
                 print("@@@ (WVALUE_MATCH_WITH_MANY)", len(pe_candidates_for_wvalue), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates_for_wvalue[0].get_idx())
                 continue
             if len(pe_candidates_for_wplane):
                 pe_candidates_for_wplane.sort(key=operator.attrgetter('workload'))
-                pe_candidates_for_wplane[0].add_wvalue_wplane_pair(pair)
+                pe_candidates_for_wplane[0].add_wvalue_wplane_count(tup)
                 print("@@@ (WPLANE_MATCH_WITH_MANY)", len(pe_candidates_for_wplane), "Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates_for_wplane[0].get_idx())
                 continue
 
@@ -431,7 +433,7 @@ def Schedule_Hybrid_Greedy(one_filter, wvalue_wplane_pairs):
         # Pass 4 for Case IV:
         pe_candidates = pes
         pe_candidates.sort(key=operator.attrgetter('workingset_size'))
-        pe_candidates[0].add_wvalue_wplane_pair(pair)
+        pe_candidates[0].add_wvalue_wplane_count(tup)
         print("@@@ (NO_MATCH) Add ( wvalue = ", wvalue, ", wplane = ", wplane, ") to PE #", pe_candidates[0].get_idx())
 
     # Output all the PESs
@@ -440,6 +442,8 @@ def Schedule_Hybrid_Greedy(one_filter, wvalue_wplane_pairs):
         pe.print_PE()
 
     return pes
+
+
 
 ## Function: Eval (for evaluting pes)
 def Eval(pes, name):
@@ -494,16 +498,22 @@ def run():
     print("MAX_WORKLOAD = ", MAX_WORKLOAD)
 
     # Generate filter
-    one_filter = genOneFilter()
-    print(one_filter)
-    wvalue2wplanes_list = genWValue2WPlanesList(one_filter)
-    wplane2wvalues_list = genWPlane2WValuesList(one_filter)
-    wvalue_wplane_pairs = genWValueWPlanePairs(one_filter)
+    # one_filter = genOneFilter()
+    conv = np.load("data_filter.npy")
+    one_conv_filter = conv[0]
+    assert C == len(one_conv_filter)        # C
+    assert R == len(one_conv_filter[0])     # R
+    assert S == len(one_conv_filter[0][0])  # S
+
+    print(one_conv_filter)
+    wvalue2wplanes_dict = getWValue2WPlanesDict(one_conv_filter)
+    wplane2wvalues_dict = getWPlane2WValuesDict(one_conv_filter)
+    wvalue_wplane_count = getWValueWPlaneTuples(one_conv_filter)
 
     # Scheduling methods
-    pes_minworkload = Schedule_MinWorkload_Greedy(one_filter, wvalue2wplanes_list)
-    pes_minworkingset = Schedule_MinWorkingset_Greedy(one_filter, wplane2wvalues_list)
-    pes_hybrid = Schedule_Hybrid_Greedy(one_filter, wvalue_wplane_pairs)
+    pes_minworkload = Schedule_MinWorkload_Greedy(wvalue2wplanes_dict)
+    pes_minworkingset = Schedule_MinWorkingset_Greedy(wplane2wvalues_dict)
+    pes_hybrid = Schedule_Hybrid_Greedy(wvalue_wplane_count)
 
     # Evalution
     Eval(pes_minworkload, "MinWorkload_Greedy")
