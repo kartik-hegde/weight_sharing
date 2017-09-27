@@ -16,6 +16,21 @@ def convert_npy_kmeans(x):
 	print "Done!"
 	return return_dict
 
+def convert_npy_normal(x, Nconv, Nfc):
+	key_list = x.keys()
+	return_dict = {}
+
+	for i in key_list:
+		print "Converting Layer: " + str(i)
+		if 'conv' in i:
+			temp_list = convert_normal_conv(x[i], Nconv)
+		elif 'fc' in i:
+			temp_list = convert_normal_fc(x[i], Nfc)
+		return_dict[i] = temp_list
+	print "Done!"
+	return return_dict
+
+
 #Top level function to convert the npy to 8b
 def convert_npy_8b(x):
 	key_list = x.keys()
@@ -141,6 +156,59 @@ def convert_kmeans_fc(x):
 	return_list.append(x1)
 
 	return return_list
+
+#Convert 1 conv layer to weight sharing with normal distribution
+def convert_normal_conv(x, N):
+	x0 = x[0] #Filters
+	x1 = x[1] #Biases
+	return_list = []
+
+	p,q,r,s = x0.shape
+	print x0.shape
+	for l in range(s):
+		temp_list=[]
+		#Read the values into a list
+		for i in range(p):
+			for j in range(q):
+				for k in range(r):
+					temp_list.append(x0[i][j][k][l])
+
+		temp_list_normal = normal_data(temp_list, N)
+		#Write Back to the original ndarray
+		for i in range(p):
+			for j in range(q):
+				for k in range(r):
+					x0[i][j][k][l] = temp_list_normal[i*q*r+j*r+k]
+
+	return_list.append(x0)
+
+	#Do nothing for biases
+	return_list.append(x1)
+
+	return return_list
+
+#Convert 1 fc layer to weight sharing with normal distribution
+def convert_normal_fc(x, N):
+	x0 = x[0] #Filters
+	x1 = x[1] #Biases
+	return_list = []
+
+	p,q = x0.shape
+	temp_list=[]
+	#Read the values into a list
+	for i in range(p):
+		temp_list = x0[i]
+
+		temp_list_normal = normal_data(temp_list, N)
+		#Write Back to the original ndarray
+		x0[i] = temp_list_normal
+	return_list.append(x0)
+
+	#Do nothing for biases
+	return_list.append(x1)
+
+	return return_list
+
 
 #return a fixed point number Q07
 def byte_fixed(x):
