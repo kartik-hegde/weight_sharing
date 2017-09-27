@@ -2,16 +2,16 @@ import numpy as np
 from math_helpers import *
 
 #Top level function to convert the npy to weight sharing
-def convert_npy_kmeans(x):
+def convert_npy_kmeans(x, scale_factor, data_16bit):
 	key_list = x.keys()
 	return_dict = {}
 
 	for i in key_list:
 		print "Converting Layer: " + str(i)
 		if 'conv' in i:
-			temp_list = convert_kmeans_conv(x[i])
+			temp_list = convert_kmeans_conv(x[i], scale_factor, data_16bit)
 		elif 'fc' in i:
-			temp_list = convert_kmeans_fc(x[i])
+			temp_list = convert_kmeans_fc(x[i], scale_factor, data_16bit)
 		return_dict[i] = temp_list
 	print "Done!"
 	return return_dict
@@ -100,22 +100,32 @@ def convert_8b_fc(x):
 	return return_list
 
 #Convert 1 conv layer to weight sharing with kmeans
-def convert_kmeans_conv(x):
+def convert_kmeans_conv(x, scale_factor, data_16bit):
 	x0 = x[0] #Filters
 	x1 = x[1] #Biases
 	return_list = []
 
 	p,q,r,s = x0.shape
 	print x0.shape
+	#Chop off requested number of bits from the number of Unique weights
+	num_centroids = 2 ** (int(np.log2(p*q*r)) + 1 - scale_factor)
 	for l in range(s):
 		temp_list=[]
 		#Read the values into a list
 		for i in range(p):
 			for j in range(q):
 				for k in range(r):
-					temp_list.append(x0[i][j][k][l])
+					#Convert to 32bit
+					if data_16bit:
+						temp_data = np.float32(x0[i][j][k][l])
+					else:
+						temp_data = x0[i][j][k][l]
 
-		temp_list_centroids, templist_index = kmeans_data(temp_list, (p*q*r/4))
+					temp_list.append(temp_data)
+
+		temp_list = np.asarray(temp_list, dtype=np.float32)
+		temp_list_centroids, templist_index = kmeans_data(temp_list, num_centroids)
+
 		#Replace the values in temp list
 		for i,item in enumerate(temp_list):
 			temp_list[i] = temp_list_centroids[templist_index[i]]
@@ -133,18 +143,26 @@ def convert_kmeans_conv(x):
 	return return_list
 
 #Convert 1 fc layer to weight sharing with kmeans
-def convert_kmeans_fc(x):
+def convert_kmeans_fc(x, scale_factor, data_16bit):
 	x0 = x[0] #Filters
 	x1 = x[1] #Biases
 	return_list = []
 
 	p,q = x0.shape
+	#Chop off requested number of bits from the number of Unique weights
+	num_centroids = 2 ** (int(np.log2(q)) + 1 - scale_factor)
 	temp_list=[]
 	#Read the values into a list
 	for i in range(p):
-		temp_list = x0[i]
+		print i
+		#Convert to 32bit
+		if data_16bit:
+			temp_list = np.asarray(x0[i], dtype=np.float32)
+		else:
+			temp_list = x0[i]
+		
+		temp_list_centroids, templist_index = kmeans_data(temp_list, num_centroids )
 
-		temp_list_centroids, templist_index = kmeans_data(temp_list, q/4 )
 		#Replace the values in temp list
 		for j,item in enumerate(temp_list):
 			temp_list[j] = temp_list_centroids[templist_index[j]]

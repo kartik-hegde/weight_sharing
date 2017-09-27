@@ -17,6 +17,21 @@ def extract_rsc(x,K):
 		return_list.append(column_list)
 	return return_list
 
+#This function returns an RSC in following shape for Kth filter
+#[ [RS data for 0th filter] .. [RS column data for Kth filter] ]
+def extract_rsk(x,C):
+	print "Extracting an RSC of shape "+ str(x.shape)
+	p,q,r,s = x.shape
+	#Read the values into a list
+	column_list=[]
+	for k in range(s):
+		row_list=[]
+		for j in range(p):
+			for i in range(q):	
+				row_list.append(x[i][j][C][k])
+		column_list.append(row_list)
+	return column_list
+
 #This function calculates the repeating overlaps in RSC Columns
 def calc_repetition_overlap_rsc(x):
 	for i,item_column in enumerate(x):
@@ -25,7 +40,16 @@ def calc_repetition_overlap_rsc(x):
 			print "In Column" +  str(i) + " with Row" + str(i) + " & Row" + str(j) + " the repetitions are:"
 			print "\t\tThere were "+str(len(repeat_list))+" overlapping repetitions"
 			print "\t\t\t\t Histogram is: " + str(get_histogram(repeat_list,10))
-	
+
+#This function calculates the repeating overlaps in RSK
+def calc_repetition_overlap_rsk(x):
+	for j in range(1,len(x)):
+		repeat_list = overlap_arrays(x[0], x[j])
+		print "In RSK with Filter" +  str(0) + " and Filter" + str(j) + ", the repetitions are:"
+		print "\t\tThere were "+str(len(repeat_list))+" overlapping repetitions"
+		print "\t\t\t\t Histogram is: " + str(get_histogram(repeat_list,20))
+
+
 def get_histogram(x, length):
 	return_list=[]
 	for i in range(1,length):
@@ -47,6 +71,10 @@ def overlap_arrays(x,y):
 data = np.load("data_kmeans_scaled.npy").item()
 
 #Change this to get the desired data
-item = data['conv3'][0]
-item_rsc = extract_rsc(item,1)
-calc_repetition_overlap_rsc(item_rsc)
+item = data['conv1'][0]
+
+#item_rsc = extract_rsc(item,1)
+#calc_repetition_overlap_rsc(item_rsc)
+
+item_rsk = extract_rsk(item,1)
+calc_repetition_overlap_rsk(item_rsk)
