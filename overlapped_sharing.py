@@ -39,7 +39,9 @@ def calc_repetition_overlap_rsc(x):
 			repeat_list = overlap_arrays(x[i][0], x[i][j])
 			print "In Column" +  str(i) + " with Row" + str(i) + " & Row" + str(j) + " the repetitions are:"
 			print "\t\tThere were "+str(len(repeat_list))+" overlapping repetitions"
-			print "\t\t\t\t Histogram is: " + str(get_histogram(repeat_list,10))
+			histogram,saved = get_histogram(repeat_list,10)
+			print "\t\t\t\t Histogram is: " + str(histogram)
+			print "Savings is " + str(saved*1.0/len(x))
 
 #This function calculates the repeating overlaps in RSK
 def calc_repetition_overlap_rsk(x):
@@ -47,34 +49,92 @@ def calc_repetition_overlap_rsk(x):
 		repeat_list = overlap_arrays(x[0], x[j])
 		print "In RSK with Filter" +  str(0) + " and Filter" + str(j) + ", the repetitions are:"
 		print "\t\tThere were "+str(len(repeat_list))+" overlapping repetitions"
-		print "\t\t\t\t Histogram is: " + str(get_histogram(repeat_list,20))
+		histogram,saved = get_histogram(repeat_list,20)
+		print "\t\t\t\t Histogram is: " + str(histogram)
+		print "Savings is " + str(saved*1.0/len(x))
 
 
 def get_histogram(x, length):
 	return_list=[]
+	saved=0
 	for i in range(1,length):
 		return_list.append(x.count(i))
-	return return_list
+		
+	for i,item in enumerate(return_list):
+		saved = saved + item * i
+	return return_list,saved
 
 #This function can help find the overlaps in weight sharing, given two arrays
 def overlap_arrays(x,y):
 	temp_list =[]
-	repeat_list=[]
+	repeat_list_x=[]
+	repeat_list_y=[]
+	repeat_list =[]
 	for i, item in enumerate(x):
-		if item not in temp_list:
+		if item not in temp_list and item!=0 :
 			indices_x = [j for j,p in enumerate(x) if p == item]
-			indices_y = [k for k,q in enumerate(x) if q == item]
-			repeat_list.append(len(set(indices_x) & set(indices_y)))
+			repeat_list_x.append(indices_x)
 			temp_list.append(item)
+	temp_list=[]
+	for i, item in enumerate(y):
+		if item not in temp_list and item!=0:
+			indices_y = [j for j,p in enumerate(y) if p == item]
+			repeat_list_y.append(indices_y)
+			temp_list.append(item)
+	for i,item in enumerate(repeat_list_x):
+		for j,item_y in enumerate(repeat_list_y):
+			repeat_len = len( set(item) & set(item_y) )
+			if repeat_len > 1:
+				repeat_list.append(repeat_len)
 	return repeat_list
 	
-data = np.load("data_kmeans_scaled.npy").item()
+#This function can help find the overlaps in weight sharing, given three arrays
+def overlap_arrays_3(x,y,z):
+	temp_list =[]
+	repeat_list_x=[]
+	repeat_list_y=[]
+	repeat_list_z=[]
+	repeat_list_xy =[]
+	repeat_list_xyz=[]
+	for i, item in enumerate(x):
+		if item not in temp_list and item!=0 :
+			indices_x = [j for j,p in enumerate(x) if p == item]
+			repeat_list_x.append(indices_x)
+			temp_list.append(item)
+	temp_list=[]
+	for i, item in enumerate(y):
+		if item not in temp_list and item!=0:
+			indices_y = [j for j,p in enumerate(y) if p == item]
+			repeat_list_y.append(indices_y)
+			temp_list.append(item)
+	temp_list=[]
+	for i, item in enumerate(z):
+		if item not in temp_list and item!=0:
+			indices_z = [j for j,p in enumerate(z) if p == item]
+			repeat_list_z.append(indices_z)
+			temp_list.append(item)
+	for i,item in enumerate(repeat_list_x):
+		for j,item_y in enumerate(repeat_list_y):
+			repeat_len = len( set(item) & set(item_y) )
+			if repeat_len > 1:
+				repeat_list_xy.append(repeat_len)
+	for i,item in enumerate(repeat_list_x):
+		for j,item_y in enumerate(repeat_list_y):
+			for j,item_z in enumerate(repeat_list_z):
+				repeat_len = len( set(item) & set(item_y) & set(item_z) )
+				if repeat_len > 0:
+					repeat_list_xyz.append(repeat_len)
+
+	return repeat_list_xyz
+
+data = np.load("data_8bit_kmeans_32.npy").item()
 
 #Change this to get the desired data
-item = data['conv1'][0]
+item = data['conv3'][0]
 
-#item_rsc = extract_rsc(item,1)
-#calc_repetition_overlap_rsc(item_rsc)
+item_rsc = extract_rsc(item,1)
+#print get_histogram(overlap_arrays_3(item_rsc[0][0], item_rsc[0][1],item_rsc[0][2]),10)
+calc_repetition_overlap_rsc(item_rsc)
 
-item_rsk = extract_rsk(item,1)
-calc_repetition_overlap_rsk(item_rsk)
+#item_rsk = extract_rsk(item,1)
+#calc_repetition_overlap_rsk(item_rsk)

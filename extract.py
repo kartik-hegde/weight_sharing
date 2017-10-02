@@ -1,7 +1,7 @@
 import numpy as np
 from npy_process import *
 
-data = np.load("data_kmeans.npy").item()
+data = np.load("bvlc_alexnet.npy").item()
 
 conv3 = data['conv3']
 conv3 = conv3[0]
@@ -21,9 +21,12 @@ conv3_byte_flat_rsk = byte_fixed_list(conv3_flat_rsk)
 
 print get_count(conv3_flat)
 print get_count(conv3_f16_flat)
-print get_count(conv3_flat_rsk)
-print get_count(conv3_f16_flat_rsk)
-print get_count(conv3_byte_flat)
-print get_count(conv3_byte_flat_rsk)
+#print get_count(conv3_flat_rsk)
+#print get_count(conv3_f16_flat_rsk)
+q = get_count(conv3_byte_flat)
+print q
+indices_x = [j for j,p in enumerate(q) if p == 1]
+print indices_x
+#print get_count(conv3_byte_flat_rsk)
 #print conv3_flat
 #print byte_to_32b_list(conv3_byte_flat)
