@@ -127,14 +127,14 @@ def overlap_arrays_3(x,y,z):
 
 	return repeat_list_xyz
 
-data = np.load("data_8bit_kmeans_32.npy").item()
+#data = np.load("data_8bit_kmeans_32.npy").item()
 
 #Change this to get the desired data
-item = data['conv3'][0]
+#item = data['conv3'][0]
 
-item_rsc = extract_rsc(item,1)
+#item_rsc = extract_rsc(item,1)
 #print get_histogram(overlap_arrays_3(item_rsc[0][0], item_rsc[0][1],item_rsc[0][2]),10)
-calc_repetition_overlap_rsc(item_rsc)
+#calc_repetition_overlap_rsc(item_rsc)
 
 #item_rsk = extract_rsk(item,1)
 #calc_repetition_overlap_rsk(item_rsk)

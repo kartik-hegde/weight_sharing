@@ -21,11 +21,12 @@ def updateWeightsL(low, high, tempX):
                         tempX[i] = (low + high)/2.0
 
 #Models normal distribution and returns quantized values
-def normal_data(x, N):
+def normal_data(x, scale_factor):
         normalX = x
         mu = 0
         var = 0
         numWeights = len(x)
+	N = int(numWeights/scale_factor) + 1
         mu = sum(x)/numWeights
         #for i in range(len(uniqueWeights)):
         #       uniqueWeights[i] -= mu

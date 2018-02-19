@@ -2,68 +2,83 @@ import numpy as np
 from math_helpers import *
 
 #Top level function to convert the npy to weight sharing
-def convert_npy_kmeans(x, scale_factor, data_16bit):
+def convert_npy_kmeans(x, scale_factor, data_16bit, isBias):
 	key_list = x.keys()
 	return_dict = {}
 
 	for i in key_list:
 		print "Converting Layer: " + str(i)
 		if 'conv' in i:
-			temp_list = convert_kmeans_conv(x[i], scale_factor, data_16bit)
+			temp_list = convert_kmeans_conv(x[i], scale_factor, data_16bit, isBias)
 		elif 'fc' in i:
-			temp_list = convert_kmeans_fc(x[i], scale_factor, data_16bit)
+			temp_list = convert_kmeans_fc(x[i], scale_factor, data_16bit, isBias)
+		else:
+			temp_list = x[i]
 		return_dict[i] = temp_list
 	print "Done!"
 	return return_dict
 
-def convert_npy_normal(x, Nconv, Nfc):
+#def convert_npy_normal(x, Nconv, Nfc):
+def convert_npy_normal(x, scale_factor, isBias):
 	key_list = x.keys()
 	return_dict = {}
 
 	for i in key_list:
 		print "Converting Layer: " + str(i)
 		if 'conv' in i:
-			temp_list = convert_normal_conv(x[i], Nconv)
+			temp_list = convert_normal_conv(x[i], scale_factor, isBias)
 		elif 'fc' in i:
-			temp_list = convert_normal_fc(x[i], Nfc)
+			temp_list = convert_normal_fc(x[i], scale_factor, isBias)
+		else:
+			temp_list = x[i]
 		return_dict[i] = temp_list
 	print "Done!"
 	return return_dict
 
 
 #Top level function to convert the npy to 8b
-def convert_npy_8b(x):
+def convert_npy_8b(x, isBias):
 	key_list = x.keys()
 	return_dict = {}
 
 	for i in key_list:
 		print "Converting Layer: " + str(i)
 		if 'conv' in i:
-			temp_list = convert_8b_conv(x[i])
+			temp_list = convert_8b_conv(x[i], isBias)
 		elif 'fc' in i:
 			temp_list = convert_8b_fc(x[i])
+		else:
+			temp_list = x[i]
 		return_dict[i] = temp_list
 	print "Done!"
 	return return_dict
 
 #Top level function to convert the npy to 16b
-def convert_npy_16b(x):
+def convert_npy_16b(x, isBias):
 	key_list = x.keys()
 	return_dict = {}
 
 	for i in key_list:
 		print "Converting Layer: " + str(i)
-		temp_list = []
-		for j in range(2): #Weights and biases
-			temp_list.append(np.asarray(x[i][j], dtype=np.float16))
-		return_dict[i] = temp_list 
+		if 'conv' in i:
+			temp_list = []
+			#for j in range(int(isBias)+1): #Weights and biases
+			if isBias:
+				for j in range(2): #Weights and biases
+					temp_list.append(np.asarray(x[i][j], dtype=np.float16))
+			else:
+				for j in range(1): #Weights
+					temp_list.append(np.asarray(x[i][j], dtype=np.float16))
+			return_dict[i] = temp_list 
+		else:
+			return_dict[i] = x[i]
 	print "Done!"
 	return return_dict
 
 #Convert 1 conv layer to 8b
-def convert_8b_conv(x):
+def convert_8b_conv(x, isBias):
 	x0 = x[0] #Filters
-	x1 = x[1] #Biases
+	
 	return_list = []
 
 	p,q,r,s = x0.shape
@@ -73,11 +88,13 @@ def convert_8b_conv(x):
 				for l in range(s):
 					x0[i][j][k][l] = byte_to_32b(byte_fixed(x0[i][j][k][l]))
 	return_list.append(x0)
-	t = x1.shape[0]
-	for i in range(t):
-		x1[i] = byte_to_32b(byte_fixed(x1[i]))
+	if isBias:
+		x1 = x[1] #Biases
+		t = x1.shape[0]
+		for i in range(t):
+			x1[i] = byte_to_32b(byte_fixed(x1[i]))
 
-	return_list.append(x1)
+		return_list.append(x1)
 
 	return return_list
 
@@ -100,15 +117,13 @@ def convert_8b_fc(x):
 	return return_list
 
 #Convert 1 conv layer to weight sharing with kmeans
-def convert_kmeans_conv(x, scale_factor, data_16bit):
+def convert_kmeans_conv(x, scale_factor, data_16bit, isBias):
 	x0 = x[0] #Filters
-	x1 = x[1] #Biases
 	return_list = []
 
 	p,q,r,s = x0.shape
-	print x0.shape
 	#Chop off requested number of bits from the number of Unique weights
-	num_centroids = 2 ** (int(np.log2(p*q*r)) + 1 - scale_factor)
+	num_centroids = 2 ** (int(np.log2(4*p*q*r/3)) - scale_factor)
 	for l in range(s):
 		temp_list=[]
 		#Read the values into a list
@@ -137,15 +152,16 @@ def convert_kmeans_conv(x, scale_factor, data_16bit):
 
 	return_list.append(x0)
 
-	#Do nothing for biases
-	return_list.append(x1)
+	if isBias:
+		#Do nothing for biases
+		x1 = x[1] #Biases
+		return_list.append(x1)
 
 	return return_list
 
 #Convert 1 fc layer to weight sharing with kmeans
-def convert_kmeans_fc(x, scale_factor, data_16bit):
+def convert_kmeans_fc(x, scale_factor, data_16bit, isBias):
 	x0 = x[0] #Filters
-	x1 = x[1] #Biases
 	return_list = []
 
 	p,q = x0.shape
@@ -154,7 +170,6 @@ def convert_kmeans_fc(x, scale_factor, data_16bit):
 	temp_list=[]
 	#Read the values into a list
 	for i in range(p):
-		print i
 		#Convert to 32bit
 		if data_16bit:
 			temp_list = np.asarray(x0[i], dtype=np.float32)
@@ -170,19 +185,19 @@ def convert_kmeans_fc(x, scale_factor, data_16bit):
 		x0[i] = temp_list
 	return_list.append(x0)
 
-	#Do nothing for biases
-	return_list.append(x1)
+	if isBias:
+		#Do nothing for biases
+		x1 = x[1] #Biases
+		return_list.append(x1)
 
 	return return_list
 
 #Convert 1 conv layer to weight sharing with normal distribution
-def convert_normal_conv(x, N):
+def convert_normal_conv(x, scale_factor, isBias):
 	x0 = x[0] #Filters
-	x1 = x[1] #Biases
 	return_list = []
 
 	p,q,r,s = x0.shape
-	print x0.shape
 	for l in range(s):
 		temp_list=[]
 		#Read the values into a list
@@ -191,7 +206,7 @@ def convert_normal_conv(x, N):
 				for k in range(r):
 					temp_list.append(x0[i][j][k][l])
 
-		temp_list_normal = normal_data(temp_list, N)
+		temp_list_normal = normal_data(temp_list, scale_factor)
 		#Write Back to the original ndarray
 		for i in range(p):
 			for j in range(q):
@@ -199,16 +214,16 @@ def convert_normal_conv(x, N):
 					x0[i][j][k][l] = temp_list_normal[i*q*r+j*r+k]
 
 	return_list.append(x0)
-
-	#Do nothing for biases
-	return_list.append(x1)
+	if isBias:
+		#Do nothing for biases
+		x1 = x[1] #Biases
+		return_list.append(x1)
 
 	return return_list
 
 #Convert 1 fc layer to weight sharing with normal distribution
-def convert_normal_fc(x, N):
+def convert_normal_fc(x, scale_factor, isBias):
 	x0 = x[0] #Filters
-	x1 = x[1] #Biases
 	return_list = []
 
 	p,q = x0.shape
@@ -222,8 +237,10 @@ def convert_normal_fc(x, N):
 		x0[i] = temp_list_normal
 	return_list.append(x0)
 
-	#Do nothing for biases
-	return_list.append(x1)
+	if isBias:
+		x1 = x[1] #Biases
+		#Do nothing for biases
+		return_list.append(x1)
 
 	return return_list
 
@@ -251,13 +268,13 @@ def byte_to_32b_list(x):
 	return converted
 
 #Flatten the array in terms of RSC
-def flatten_rsc(x):
+def flatten_rsc(x, K):
 	p,q,r,s = x.shape
 	flat=[]
 	for i in range(p):
 		for j in range(q):
 			for k in range(r):
-				flat.append(x[i][j][k][0])
+				flat.append(x[i][j][k][K])
 	return flat
 
 #Flatten the Array in terms of RSK
@@ -272,10 +289,10 @@ def flatten_rsk(x):
 
 #Return a bucket of repetitions of values
 def get_count(x): #receive a flat list
-	count_bin= np.zeros((500,), dtype=np.int)
+	count_bin= np.zeros((5000,), dtype=np.int)
 	used=[]
 	for i in x:
-		if(i not in used):
+		if(i not in used and i != 0):
 			count = x.count(i)
 			count_bin[count]=count_bin[count]+1
 			used.append(i)
